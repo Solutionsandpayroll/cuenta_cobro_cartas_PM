@@ -75,7 +75,6 @@ function formatValorCOP(num) {
 function App() {
   const [isHelpExpanded, setIsHelpExpanded] = useState(false)
   const [activeTab, setActiveTab] = useState('archivos') // 'archivos' | 'editor'
-  const [showBlockedModal, setShowBlockedModal] = useState(false)
 
   // Base Empleados
   const [baseEmpleadosFile, setBaseEmpleadosFile] = useState(null)
@@ -90,6 +89,7 @@ function App() {
   const [selectedCodigo, setSelectedCodigo] = useState('')
   const [selectedRow, setSelectedRow] = useState(null)
   const [reteICASource, setReteICASource] = useState('integrada') // 'integrada' | 'usuario'
+  const [empleadosSource, setEmpleadosSource] = useState('integrada') // 'integrada' | 'usuario'
 
   // Base Empleados - datos parseados
   const [empleadosData, setEmpleadosData] = useState([])
@@ -172,6 +172,11 @@ function App() {
     replace('@@NUMERODOCUMENTO@@', selectedEmpleado?.nit ?? '')
     replace('@@TELEFONO@@', selectedEmpleado?.telefono ?? '')
     replace('@@DIRECCION@@', selectedEmpleado?.direccion ?? '')
+    const _deptRaw = (selectedEmpleado?.departamento ?? '').trim().toUpperCase()
+    const _deptFormateado = _deptRaw === 'BOGOTA'
+      ? 'Bogotá D.C'
+      : _deptRaw.charAt(0).toUpperCase() + _deptRaw.slice(1).toLowerCase()
+    replace('@@DEPARTAMENTO@@', _deptFormateado)
     replace('@@DOCUMENTO@@', tipoDoc)
     replace('@@VALORRETEF@@', tieneRetencionFuente === 'no' ? 'No Aplica' : valorRetencionFuente)
     replace('@@VALORRETEICA@@', tieneReteICA === 'no' ? 'No Aplica' : (selectedRow?.tarifaPorMil != null ? selectedRow.tarifaPorMil + '/1000' : ''))
@@ -183,7 +188,7 @@ function App() {
     const _valorFuente = tieneRetencionFuente === 'no' ? 0 : (isNaN(_pctFuente) ? 0 : _pctFuente / 100) * _numValor
     replace('@@VALORFUENTE@@', tieneRetencionFuente === 'no' ? '-' : formatValorCOP(_valorFuente))
     replace('@@TOTALPAGAR@@', formatValorCOP(_numValor - _valorICA - _valorFuente))
-    if (tieneReteICA === 'no') {
+    if (tieneRetencionFuente !== 'no') {
       xml = xml.replace(/@@INICIOICA@@[\s\S]*?@@FINICA@@/g, '')
     } else {
       replace('@@INICIOICA@@', '')
@@ -346,17 +351,17 @@ function App() {
     return parsed
   }
 
-  // Cargar el Excel integrado al montar el componente
+  // Cargar los Excels integrados al montar el componente
   useEffect(() => {
     fetch('/Base ReteICA.xlsx')
       .then((res) => res.arrayBuffer())
-      .then((buffer) => {
-        const parsed = parseSheetData(buffer)
-        setReteICAData(parsed)
-      })
-      .catch(() => {
-        console.warn('No se pudo cargar la Base ReteICA integrada.')
-      })
+      .then((buffer) => { setReteICAData(parseSheetData(buffer)) })
+      .catch(() => { console.warn('No se pudo cargar la Base ReteICA integrada.') })
+
+    fetch('/Base empleados.xls')
+      .then((res) => res.arrayBuffer())
+      .then((buffer) => { setEmpleadosData(parseEmpleadosData(buffer)) })
+      .catch(() => { console.warn('No se pudo cargar la Base empleados integrada.') })
   }, [])
 
   const getTodayISO = () => new Date().toISOString().split('T')[0]
@@ -406,12 +411,12 @@ function App() {
   const handleEmpleadosFile = (file) => {
     if (!file) return
     setBaseEmpleadosFile(file)
-    setEmpleadosData([])
     resetEmpleadoForm()
     const reader = new FileReader()
     reader.onload = (e) => {
       const parsed = parseEmpleadosData(e.target.result)
       setEmpleadosData(parsed)
+      setEmpleadosSource('usuario')
     }
     reader.readAsArrayBuffer(file)
   }
@@ -419,8 +424,13 @@ function App() {
   const handleRemoveEmpleados = () => {
     setBaseEmpleadosFile(null)
     if (inputEmpleadosRef.current) inputEmpleadosRef.current.value = ''
-    setEmpleadosData([])
     resetEmpleadoForm()
+    setEmpleadosSource('integrada')
+    // Volver a cargar la base integrada
+    fetch('/Base empleados.xls')
+      .then((res) => res.arrayBuffer())
+      .then((buffer) => { setEmpleadosData(parseEmpleadosData(buffer)) })
+      .catch(() => { setEmpleadosData([]) })
   }
 
   const empleadosFiltrados = empleadoBusqueda.length > 0
@@ -433,7 +443,7 @@ function App() {
     setEmpleadoDropdownVisible(false)
     setTipoDoc(emp.tipoDoc || '')
     setFechaProceso(getTodayISO())
-    setTieneReteICA('')
+    setTieneReteICA(emp.departamento?.toUpperCase() === 'BOGOTA' ? 'si' : 'no')
     setTieneRetencionFuente('')
     setValorRetencionFuente('')
   }
@@ -642,23 +652,11 @@ function App() {
               Carga de Archivos
             </button>
             <button
-              className={`tab-btn ${activeTab === 'editor' ? 'tab-btn--active' : ''} ${empleadosData.length === 0 ? 'tab-btn--locked' : ''}`}
-              onClick={() => {
-                if (empleadosData.length === 0) {
-                  setShowBlockedModal(true)
-                } else {
-                  setActiveTab('editor')
-                }
-              }}
+              className={`tab-btn ${activeTab === 'editor' ? 'tab-btn--active' : ''}`}
+              onClick={() => setActiveTab('editor')}
             >
               <span className="tab-number">2</span>
               Editor de Información
-              {empleadosData.length === 0 && (
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft: '4px', opacity: 0.6}}>
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                </svg>
-              )}
             </button>
           </div>
 
@@ -677,17 +675,70 @@ function App() {
               <div className="section-body">
                 <div className="form-section">
 
-                  {/* Base Empleados */}
-                  {renderDropZone(
-                    'Base empleados',
-                    baseEmpleadosFile,
-                    dragEmpleados,
-                    inputEmpleadosRef,
-                    handleEmpleadosFile,
-                    setDragEmpleados,
-                    handleRemoveEmpleados,
-                    '.xlsx,.xls'
-                  )}
+                  {/* Base Empleados (opcional — se carga automáticamente desde la base integrada) */}
+                  <div className="form-group">
+                    <label className="label">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      Base empleados
+                      <span className="badge-opcional">Opcional</span>
+                    </label>
+                    <p className="hint">Solo necesario si la información de empleados cambió. Si no se sube ningún archivo, se usa la base integrada automáticamente.</p>
+                    <input
+                      ref={inputEmpleadosRef}
+                      type="file"
+                      accept=".xlsx,.xls"
+                      className="file-input"
+                      onChange={(e) => handleEmpleadosFile(e.target.files[0])}
+                    />
+                    {!baseEmpleadosFile ? (
+                      <div
+                        className={`drop-zone ${dragEmpleados ? 'drag-active' : ''}`}
+                        onClick={() => inputEmpleadosRef.current.click()}
+                        onDragOver={(e) => { e.preventDefault(); setDragEmpleados(true) }}
+                        onDragLeave={() => setDragEmpleados(false)}
+                        onDrop={(e) => { e.preventDefault(); setDragEmpleados(false); handleEmpleadosFile(e.dataTransfer.files[0]) }}
+                      >
+                        <div className="drop-zone-content">
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                            <polyline points="14 2 14 8 20 8"/>
+                            <line x1="8" y1="13" x2="16" y2="13"/>
+                            <line x1="8" y1="17" x2="16" y2="17"/>
+                            <line x1="10" y1="9" x2="8" y2="9"/>
+                          </svg>
+                          <div className="drop-zone-text">
+                            <span className="drop-zone-title">Arrastra el archivo aquí</span>
+                            <span className="drop-zone-subtitle">o haz clic para seleccionarlo</span>
+                          </div>
+                          <span className="drop-zone-hint">Archivos .xlsx, .xls</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="drop-zone has-file">
+                        <div className="file-preview">
+                          <div className="file-icon">
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                              <polyline points="14 2 14 8 20 8"/>
+                            </svg>
+                          </div>
+                          <div className="file-details">
+                            <div className="file-name">{baseEmpleadosFile.name}</div>
+                            <div className="file-size">{formatFileSize(baseEmpleadosFile.size)}</div>
+                          </div>
+                          <button className="btn-remove" title="Quitar archivo" onClick={handleRemoveEmpleados}>
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <line x1="18" y1="6" x2="6" y2="18"/>
+                              <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Base ReteICA (opcional) */}
                   <div className="form-group">
@@ -822,6 +873,9 @@ function App() {
                         <circle cx="12" cy="7" r="4"/>
                       </svg>
                       Empleado
+                      <span className={`badge-source ${empleadosSource === 'usuario' ? 'badge-source--usuario' : ''}`}>
+                        {empleadosSource === 'usuario' ? 'Base actualizada' : 'Base integrada'}
+                      </span>
                     </label>
                     <div className="searchable-select-container">
                       <input
@@ -1084,6 +1138,7 @@ function App() {
                         className="btn-generar btn-generar--pdf"
                         onClick={generatePDF}
                         disabled={generando || generandoPDF || !selectedEmpleado || !fechaProceso}
+                        style={{ display: 'none' }}
                       >
                         {generandoPDF ? (
                           <>
@@ -1117,33 +1172,6 @@ function App() {
 
         </div>
       </main>
-
-      {/* Modal: Base de Empleados requerida */}
-      {showBlockedModal && (
-        <div className="modal-overlay" onClick={() => setShowBlockedModal(false)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-              </svg>
-            </div>
-            <h3>Base de Empleados requerida</h3>
-            <p>Para acceder al editor debes cargar primero el archivo Excel de empleados en la sección <strong>Carga de Archivos</strong>.</p>
-            <div className="modal-actions">
-              <button
-                className="modal-btn-ok"
-                onClick={() => { setShowBlockedModal(false); setActiveTab('archivos') }}
-              >
-                Ir a Carga de Archivos
-              </button>
-              <button className="modal-btn-cancel" onClick={() => setShowBlockedModal(false)}>
-                Cerrar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Footer */}
       <footer className="footer">
