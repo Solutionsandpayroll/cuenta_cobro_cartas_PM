@@ -135,18 +135,14 @@ function App() {
   }, [])
 
   // Guarda el consecutivo en JSONBin y también en localStorage como respaldo
-  const saveConsecutivo = async (n) => {
+  const saveConsecutivo = (n) => {
     localStorage.setItem('pm_cartas_consecutivo', String(n))
     if (_JB_BIN_ID && _JB_KEY) {
-      try {
-        await fetch(_JB_URL, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json', 'X-Master-Key': _JB_KEY },
-          body: JSON.stringify({ consecutivo: n }),
-        })
-      } catch (e) {
-        console.warn('[JSONBin] No se pudo guardar el consecutivo:', e)
-      }
+      fetch(_JB_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': _JB_KEY },
+        body: JSON.stringify({ consecutivo: n }),
+      }).catch(e => console.warn('[JSONBin] No se pudo guardar el consecutivo:', e))
     }
   }
 
@@ -221,7 +217,7 @@ function App() {
       URL.revokeObjectURL(url)
       const next = consecutivo + 1
       setConsecutivo(next)
-      await saveConsecutivo(next)
+      saveConsecutivo(next)
     } catch (err) {
       console.error(err)
       alert('Error al generar la carta: ' + err.message)
@@ -310,7 +306,7 @@ function App() {
 
       const next = consecutivo + 1
       setConsecutivo(next)
-      await saveConsecutivo(next)
+      saveConsecutivo(next)
     } catch (err) {
       console.error(err)
       alert('Error al generar el PDF: ' + err.message)
